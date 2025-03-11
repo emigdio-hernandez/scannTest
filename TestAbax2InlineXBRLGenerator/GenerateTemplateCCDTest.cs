@@ -1,0 +1,413 @@
+﻿using Abax2InlineXBRLGenerator.Generator;
+using Abax2InlineXBRLGenerator.Generator.Formatters;
+using Abax2InlineXBRLGenerator.Model;
+using Abax2InlineXBRLGenerator.Util;
+using AbaxXBRLCnbvPersistence.Constants;
+using AbaxXBRLCnbvPersistence.Persistence.Entity.Contexts;
+using AbaxXBRLCnbvPersistence.Persistence.Repositoy.Impl;
+using AbaxXBRLCnbvPersistence.Services.Impl;
+using AbaxXBRLCore.Common.Constants;
+using AbaxXBRLCore.Persistence.Entity.Contexts;
+using AbaxXBRLRealTime.Model.JBRL;
+using AbaxXBRLRealTime.Services;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Serializers;
+using Newtonsoft.Json;
+using System.Diagnostics;
+using System.Globalization;
+using System.Reflection;
+using System.Xml;
+
+namespace TestAbax2InlineXBRLGenerator;
+
+
+public class GenerateTemplateCCDTest
+{
+    private TemplateProcessor _processor;
+    private XBRLInstanceDocument _instanceDocument;
+    private XBRLTaxonomy _taxonomy;
+    private TemplateConfiguration _configuration;
+    private IDictionary<string, string> _variables;
+
+    private FilingProcessService FilingProcessService { get; set; }
+
+    private AbaxXBRLReports.Providers.Generic.Impl.MainTaxonomyInformationProvider TaxonomyResolutionService { get; set; }
+    [SetUp]
+    public void Setup()
+    {
+        var EnvironmentVariables = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText("../../../Resources/local-settings.production-migration.json"));
+        foreach (var envVar in EnvironmentVariables)
+        {
+            Environment.SetEnvironmentVariable(envVar.Key, envVar.Value);
+        }
+        var Assemblies = GetProvidersAssemblies();
+        TaxonomyResolutionService = new AbaxXBRLReports.Providers.Generic.Impl.MainTaxonomyInformationProvider(Assemblies);
+        var XbrlReportServiceProvider = new AbaxXBRLReports.Providers.Generic.Impl.MainXBRLReportProvider(Assemblies);
+        InitializeMongoSerializers();
+
+        var Abax2DbContext = new AbaxDBContext();
+        var CompanyRepository = new AbaxXBRLCore.Persistence.Repository.Implementation.EntityRepository(Abax2DbContext);
+        var EditorInformationWorkspaceRepository = new AbaxXBRLCore.Persistence.Repository.Implementation.EditorInformationWorkspaceRepository(Abax2DbContext);
+        var XbrlQueryService = new JBRLInstanceDocumentQueryService();
+        var JbrlDocumentService = new JBRLInstanceDocumentService(TaxonomyResolutionService, XbrlQueryService, null, CompanyRepository);
+
+        var AbaxRecDbContext = new AbaxRecDBContext();
+        var FilingRepository = new CnbvXbrlReportFilingRepository(AbaxRecDbContext);
+        var FilingBlobRepository = new CnbvXbrlReportFilingBlobRepository(AbaxRecDbContext);
+        var TaxonomyRepository = new XbrlTaxonomyRegRepository(AbaxRecDbContext);
+        var taxonomyRoleRepository = new XbrlTaxonomyRoleRepository(AbaxRecDbContext);
+        var creationParamRepository = new CnbvXbrlReportFilingCreationParamRepository(AbaxRecDbContext);
+
+        FilingProcessService = new FilingProcessService(
+            FilingRepository,
+            FilingBlobRepository,
+            TaxonomyRepository,
+            taxonomyRoleRepository,
+            creationParamRepository,
+            JbrlDocumentService,
+            XbrlReportServiceProvider,
+            TaxonomyResolutionService,
+            CompanyRepository,
+            EditorInformationWorkspaceRepository
+        );
+
+    }
+
+    /// <summary>
+    /// Return the assemblies with the services providers.
+    /// </summary>
+    /// <returns>Assemblies to evaluate.</returns>
+    private IList<Assembly> GetProvidersAssemblies()
+    {
+        var assemblies = new List<Assembly>();
+        var assembliesStringList = CommonConstants.ProvidersAssembliesList;
+        if (!string.IsNullOrEmpty(assembliesStringList))
+        {
+            var assembliesRawList = JsonConvert.DeserializeObject<List<string>>(assembliesStringList);
+            if (assembliesRawList != null)
+            {
+                foreach (var assembly in assembliesRawList)
+                {
+                    assemblies.Add(Assembly.Load(assembly));
+                }
+            }
+        }
+        return assemblies;
+    }
+    /// <summary>
+    /// Add mongo serializers to allow serialization and deserialization of local objects.
+    /// </summary>
+    private static void InitializeMongoSerializers()
+    {
+        var objectSerializer = new ObjectSerializer(type => ObjectSerializer.DefaultAllowedTypes(type) || IsAllowedType(type));
+        BsonSerializer.RegisterSerializer(objectSerializer);
+    }
+    /// <summary>
+    /// Check if the type is allowed to be serialized.
+    /// </summary>
+    /// <param name="type">Type to evaluate.</param>
+    /// <returns>If is allowed.</returns>
+    private static bool IsAllowedType(Type type)
+    {
+        return type.IsConstructedGenericType ?
+            type.GetGenericArguments().All(IsAllowedType) :
+            ObjectSerializer.DefaultAllowedTypes(type) || type.FullName.StartsWith("AbaxXBRL");
+    }
+
+    public async Task LoadJbrlDocument(string filingGuid = "36756")
+    {
+        var jbrl = await FilingProcessService.GetRealTimeInstanceDocument(filingGuid);
+        var factsBlobsRef = await FilingProcessService.GetReportsFilingBlob(filingGuid, BlobTypeEnum.JbrlFactsByRole);
+        if (factsBlobsRef.Success)
+        {
+            var factsList = new List<RealTimeFact>();
+            foreach (var factBlob in factsBlobsRef.Result)
+            {
+                var iterationFacts = await FilingProcessService.DownloadRealTimeFactsFromBlob(factBlob);
+                if (iterationFacts.Success)
+                {
+                    factsList.AddRange(iterationFacts.Result);
+                }
+            }
+            _variables = new Dictionary<string, string>();
+            foreach (var variable in jbrl.Variables)
+            {
+                _variables.Add(variable.Key.Contains("-") ? variable.Key.Replace("-", "_") : variable.Key, variable.Value);
+            }
+            jbrl.Facts = factsList;
+            jbrl.Taxonomy = await TaxonomyResolutionService.GetTaxonomyByNameSpace(jbrl.TaxonomyId);
+            var taxonomyNameSpaceByEntryPoint = await TaxonomyResolutionService.GetTaxonomyNamespaceByEntryPointHref();
+            //based on the taxonomy namespace which is jbrl.TaxonomyId, we get the taxonomy entry point href from the
+            //taxonomyNameSpaceByEntryPoint dictionary
+            //look for the entry point href (which is the key of the dictionary) in the taxonomyNameSpaceByEntryPoint dictionary using the jbrl.TaxonomyId
+            //which is the value of the dictionary
+            var entryPointHref = taxonomyNameSpaceByEntryPoint.FirstOrDefault(x => x.Value == jbrl.TaxonomyId).Key;
+
+            _instanceDocument = new XBRLInstanceDocument(jbrl,
+                new XBRLTaxonomy(jbrl.TaxonomyId, jbrl.Taxonomy.EspacioNombresPrincipal,
+                    entryPointHref,
+                    "ICS_2019", "2019-01-01", jbrl.Taxonomy), _variables);
+            _taxonomy = _instanceDocument.Taxonomy;
+
+
+
+            // Configurar el motor de plantillas
+            _configuration = new TemplateConfiguration
+            {
+                TemplateNamespacePrefix = "hh",
+                DefaultNumberFormat = "#,##0.00",
+                DefaultDateFormat = "yyyy-MM-dd",
+                CultureInfo = CultureInfo.InvariantCulture,
+                MaxNestingLevel = 100,
+                MaxIterations = 1000,
+                StrictValidation = true,
+                DefaultLanguage = "es"
+
+            };
+
+
+            // Registrar formateadores personalizados
+            _configuration.ValueFormatters["ixt:num-dot-decimal"] = new NumDotDecimalFormatter();
+            _configuration.ValueFormatters["ixt:dateslasheu"] = new DateFormatter("dd/MM/yyyy");
+
+            var factFinder = new XbrlFactFinder(_instanceDocument, _taxonomy.Concepts);
+
+
+
+            //fill the Key facts and FAQ
+            //FillDocumentConfig(factFinder);
+
+
+            _processor = new TemplateProcessor(_configuration, factFinder, _taxonomy, _instanceDocument);
+        }
+    }
+
+    private void FillDocumentConfig(XbrlFactFinder factFinder)
+    {
+
+        //Fill the standard variables of the document
+
+        _instanceDocument.DocumentVariables.TryGetValue("entityName", out var entityName);
+
+        var factDateOfEnd = factFinder.FindByConceptId("ifrs-full_DateOfEndOfReportingPeriod2013").FirstOrDefault();
+        var factLegalName = factFinder.FindByConceptId("ifrs-full_NameOfReportingEntityOrOtherMeansOfIdentification").FirstOrDefault();
+        var factQuarter = factFinder.FindByConceptId("ifrs_mx-cor_20141205_NumeroDeTrimestre").FirstOrDefault();
+        var factConsolidated = factFinder.FindByConceptId("ifrs_mx-cor_20141205_Consolidado").FirstOrDefault();
+        //fetch only the year part of Value of the fact and the quarter part of the fact 
+        var periodString = (factDateOfEnd?.Value?.Split('-')?[0] ?? "N/A") + "-" + (factQuarter?.Value ?? "N/A");
+
+        _instanceDocument.DocumentConfig.FullTitle = (entityName ?? "N/A") + " - " + periodString;
+        _instanceDocument.DocumentConfig.EntityLegalName = factLegalName?.Value ?? "N/A";
+        _instanceDocument.DocumentConfig.EntityName = entityName ?? "N/A";
+        _instanceDocument.DocumentConfig.ReportPeriod = periodString;
+        _instanceDocument.DocumentConfig.Consolidated = factConsolidated?.Value ?? "false";
+        _instanceDocument.DocumentConfig.DateOfEndOfReportingPeriod = factDateOfEnd?.Value ?? "N/A"; _instanceDocument.DocumentConfig.FullTitle = (entityName ?? "N/A") + " - " + periodString;
+        _instanceDocument.DocumentConfig.DocumentVariables = _instanceDocument.DocumentVariables;
+        _instanceDocument.DocumentConfig.ReportType = Constants.QuarterlyFinancialReportType;
+
+        //Specific variables used in the template
+
+        //look for the fact with concept id "ifrs-full_EquityAndLiabilities" and period "ifrs_mx_EndDateOfTwoYearsAgo"
+        var factEquityAndLiabilitiesEndOfTwoYearsAgo = factFinder.FindSingleFact(new FactSearchCriteria()
+        {
+            ConceptId = "ifrs-full_EquityAndLiabilities",
+            Periods = ["ifrs_mx_EndDateOfTwoYearsAgo"]
+        });
+
+        _instanceDocument.DocumentConfig.DocumentVariables.Add("firstYearIFRS", factEquityAndLiabilitiesEndOfTwoYearsAgo != null ? "true" : "false");
+
+        //Get the minimum Period.PeriodInstantDate or Period.PeriodEndDate date of the periods in the _instanceDocument.Context dictionary, parse it to a date
+        var minimumPeriodDate = _instanceDocument.Contexts.Values.Where(x => x.Period != null).Min(x => x.Period.PeriodInstantDate != null ? DateTime.Parse(x.Period.PeriodInstantDate) : DateTime.Parse(x.Period.PeriodEndDate));
+        _instanceDocument.DocumentConfig.DocumentVariables.Add("entityIncorporationDate", minimumPeriodDate.ToString(Constants.XBRLPeriodDateFormat));
+        _instanceDocument.DocumentConfig.EntityIncorporationDate = minimumPeriodDate.ToString(Constants.XBRLPeriodDateFormat);
+
+        //fill the key facts and FAQs
+
+        //find ifrs-full_Revenue with period 'ifrs_mx_AccumulatedOfCurrentYear'
+        var factRevenue = factFinder.FindSingleFact(new FactSearchCriteria()
+        {
+            ConceptId = "ifrs-full_Revenue",
+            Periods = ["ifrs_mx_AccumulatedOfCurrentYear"]
+        });
+        if (factRevenue != null)
+        {
+            _instanceDocument.DocumentConfig.KeyFacts.Add(new XBRLInstanceDocumentKeyFact()
+            {
+                FactId = factRevenue.Id,
+                Title = "+230.47% en ingresos",
+                Description = "Comparado con el mismo periodo del año anterior, superando las proyecciones más optimistas de los analistas.",
+                RoleUri = factRevenue.Roles.FirstOrDefault()
+            });
+        }
+
+        //find ifrs-full_Equity with period ifrs_mx_EndDateOfTheQuarterOfTheCurrentYear
+        var factEquity = factFinder.FindSingleFact(new FactSearchCriteria()
+        {
+            ConceptId = "ifrs-full_Equity",
+            Periods = ["ifrs_mx_EndDateOfTheQuarterOfTheCurrentYear"],
+            Dimensions = new Dictionary<string, string>()
+        });
+        if (factEquity != null)
+        {
+            _instanceDocument.DocumentConfig.KeyFacts.Add(new XBRLInstanceDocumentKeyFact()
+            {
+                FactId = factEquity.Id,
+                Title = "-19.3% en capital contable",
+                Description = "El capital contable de la empresa al cierre del trimestre tiene una disminución del 19.3% debido a inversiones realizadas y créditos pagados por adelantos.",
+                RoleUri = factEquity.Roles.FirstOrDefault()
+            });
+        }
+        //find ifrs-full_ProfitLoss with period ifrs_mx_AccumulatedOfCurrentYear
+        var factProfitLoss = factFinder.FindSingleFact(new FactSearchCriteria()
+        {
+            ConceptId = "ifrs-full_ProfitLoss",
+            Periods = ["ifrs_mx_AccumulatedOfCurrentYear"],
+            Dimensions = new Dictionary<string, string>()
+        });
+        if (factProfitLoss != null)
+        {
+            _instanceDocument.DocumentConfig.KeyFacts.Add(new XBRLInstanceDocumentKeyFact()
+            {
+                FactId = factProfitLoss.Id,
+                Title = "+143%  en la Utilidad Neta",
+                Description = "Las utilidades de la empresa al cierre del trimestre tienen un incremento del 143% debido a la reducción de costos y la optimización de procesos.",
+                RoleUri = factProfitLoss.Roles.FirstOrDefault()
+            });
+        }
+
+        //FAQ
+        //find ifrs-full_ProfitLoss with period ifrs_mx_AccumulatedOfCurrentYear
+        var disclosureOfResultsFact = factFinder.FindSingleFact(new FactSearchCriteria()
+        {
+            ConceptId = "ifrs-mc_DisclosureOfResultsOfOperationsAndProspectsExplanatory",
+            Periods = ["ifrs_mx_AccumulatedOfCurrentYear"],
+            Dimensions = new Dictionary<string, string>()
+        });
+        _instanceDocument.DocumentConfig.Faqs.Add(new XBRLInstanceDocumentFAQ()
+        {
+            FactId = disclosureOfResultsFact?.Id,
+            RoleUri = disclosureOfResultsFact?.Roles.FirstOrDefault(),
+            Question = "¿Qué impacto tuvo la venta de la sede de Jafra México en los resultados del 3T 2024?",
+            Answer = "La venta resultó en una pérdida contable no monetaria de 435 millones de pesos, ya que la propiedad se vendió por 385.7 millones, por debajo de su valor en libros de 811 millones. Sin embargo, generará entradas de efectivo después de impuestos de 315 millones durante los próximos tres años."
+
+        });
+        _instanceDocument.DocumentConfig.Faqs.Add(new XBRLInstanceDocumentFAQ()
+        {
+            FactId = disclosureOfResultsFact?.Id,
+            RoleUri = disclosureOfResultsFact?.Roles.FirstOrDefault(),
+            Question = "¿Cómo fue el desempeño de ingresos netos consolidados en el 3T 2024?",
+            Answer = "Los ingresos netos consolidados crecieron 6.6% respecto al año anterior, con todas las unidades de negocio logrando crecimiento. Betterware México marcó su cuarto trimestre consecutivo de crecimiento y Jafra México destacó con un aumento del 9.2%."
+        });
+        _instanceDocument.DocumentConfig.Faqs.Add(new XBRLInstanceDocumentFAQ()
+        {
+            FactId = disclosureOfResultsFact?.Id,
+            RoleUri = disclosureOfResultsFact?.Roles.FirstOrDefault(),
+            Question = "¿Cuál es la situación del apalancamiento financiero de la empresa?",
+            Answer = "El balance se fortaleció con una disminución de la deuda neta a EBITDA del 15.5% hasta 1.76x y un aumento del 38.0% en la cobertura de intereses hasta 3.52x, proporcionando mayor flexibilidad financiera."
+        });
+        _instanceDocument.DocumentConfig.Faqs.Add(new XBRLInstanceDocumentFAQ()
+        {
+            FactId = disclosureOfResultsFact?.Id,
+            RoleUri = disclosureOfResultsFact?.Roles.FirstOrDefault(),
+            Question = "¿Qué expectativas tiene BeFra para el cierre de 2024?",
+            Answer = "La compañía espera cerrar el año dentro del rango de orientación, con ingresos entre 13,800-14,400 millones de pesos. Sin embargo, el EBITDA estará más cerca del extremo inferior del rango de 2,900-3,100 millones debido al impacto temporal en el margen de Betterware México."
+        });
+
+    }
+
+    [Test]
+    public async Task ProcessTemplate_FromFile_GeneratesAndSavesIXBRLDocument_CCD_2016()
+    {
+
+        var filingGuid = "79316"; // ALLVPCK
+
+        try
+        {
+            await LoadJbrlDocument(filingGuid);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error al cargar el documento: {ex.Message}");
+            Assert.Fail($"Error al cargar el documento: {ex.Message}");
+        }
+
+        Debug.WriteLine("Inicio del test");
+
+        // Arrange
+        var templatePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Templates", "ccd_2016_template.html");
+        var outputPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../Output", $"ccd-2016-output.html");
+
+        // Asegurar que existe el directorio de salida
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+
+
+        try
+        {
+            // Act
+            // Leer la plantilla
+            var templateContent = File.ReadAllText(templatePath);
+            Debug.WriteLine($"\nPlantilla cargada - Tamaño: {templateContent.Length} caracteres");
+
+            // Procesar la plantilla
+            var result = await _processor.ProcessTemplate(templateContent, _variables);
+            Debug.WriteLine("Plantilla procesada exitosamente {result}");
+
+            var document = result as XmlDocument;
+
+            // Asegurar espacio de nombres XHTML
+            var root = document?.DocumentElement;
+            if (root != null && root.NamespaceURI != "http://www.w3.org/1999/xhtml")
+            {
+                root.SetAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+            }
+
+            // Asegurar que los elementos <script> tengan una etiqueta de cierre
+            var scriptNodes = document?.GetElementsByTagName("script");
+            if (scriptNodes != null)
+            {
+                foreach (XmlNode scriptNode in scriptNodes)
+                {
+                    if (string.IsNullOrWhiteSpace(scriptNode.InnerText))
+                    {
+                        scriptNode.InnerText = ""; // Asegurar contenido vacío para evitar cierre automático
+                    }
+                }
+            }
+
+            // Guardar el resultado
+            using var writer = XmlWriter.Create(outputPath, new XmlWriterSettings
+            {
+                Indent = true,
+                IndentChars = "  ",
+                NewLineChars = "\n",
+                NewLineHandling = NewLineHandling.Replace,
+                ConformanceLevel = ConformanceLevel.Document
+            });
+
+            writer.WriteDocType("html", null, "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd", null);
+
+            result.Save(writer);
+
+            // Assert
+            Assert.That(File.Exists(outputPath), "El archivo de salida no fue creado");
+
+            // Verificar el contenido del archivo generado
+            var generatedContent = File.ReadAllText(outputPath);
+            Assert.That(generatedContent, Does.Contain("ix:header"), "El documento no contiene el header iXBRL");
+            Assert.That(generatedContent, Does.Contain("ix:nonFraction"), "El documento no contiene hechos XBRL");
+
+            // Verificar que es un documento XML válido
+            var validationDoc = new XmlDocument();
+            Assert.DoesNotThrow(() => validationDoc.Load(outputPath), "El documento generado no es XML válido");
+        }
+        catch (Exception ex)
+        {
+            string innerMessage = ex.InnerException?.Message ?? string.Empty;
+            if (ex.InnerException != null)
+            {
+                Debug.WriteLine(ex.InnerException.Message);
+            }
+            Assert.Fail($"La prueba falló con error: {ex.Message + (innerMessage != null ? " - " + innerMessage : "")}");
+        }
+    }
+}

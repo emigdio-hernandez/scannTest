@@ -1,0 +1,15 @@
+﻿<wpf:ResourceDictionary xml:space="preserve" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:s="clr-namespace:System;assembly=mscorlib" xmlns:ss="urn:shemas-jetbrains-com:settings-storage-xaml" xmlns:wpf="http://schemas.microsoft.com/winfx/2006/xaml/presentation">
+	<s:String x:Key="/Default/CodeInspection/ExcludedFiles/FilesAndFoldersToSkip2/=7020124F_002D9FFC_002D4AC3_002D8F3D_002DAAB8E0240759_002Ff_003ACommonConstants_002Ecs_002Fl_003A_002E_002E_003F_002E_002E_003F_002E_002E_003FLibrary_003FApplication_0020Support_003FJetBrains_003FRider2024_002E3_003Fresharper_002Dhost_003FDecompilerCache_003Fdecompiler_003F9b9fcebd64ee48259c792101bea94000e6a00_003Fdc_003F31c86eeb_003FCommonConstants_002Ecs/@EntryIndexedValue">ForceIncluded</s:String>
+	<s:String x:Key="/Default/CodeInspection/ExcludedFiles/FilesAndFoldersToSkip2/=7020124F_002D9FFC_002D4AC3_002D8F3D_002DAAB8E0240759_002Ff_003AXmlDocument_002Ecs_002Fl_003A_002E_002E_003F_002E_002E_003F_002E_002E_003FLibrary_003FApplication_0020Support_003FJetBrains_003FRider2024_002E3_003Fresharper_002Dhost_003FDecompilerCache_003Fdecompiler_003Fb4ece7a1642e45759cc4520ce1405c388d6000_003F5a_003F1a7701db_003FXmlDocument_002Ecs/@EntryIndexedValue">ForceIncluded</s:String>
+	<s:String x:Key="/Default/Environment/UnitTesting/UnitTestSessionStore/Sessions/=241493ce_002D412b_002D4a8c_002D9f27_002D7b1f2d9369ba/@EntryIndexedValue">&lt;SessionState ContinuousTestingMode="0" IsActive="True" Name="ProcessTemplate_WithSimpleFact_GeneratesCorrectIXBRL" xmlns="urn:schemas-jetbrains-com:jetbrains-ut-session"&gt;
+  &lt;TestAncestor&gt;
+    &lt;TestId&gt;NUnit3x::14EDCF65-8C89-4C78-85A1-3810B623383D::net8.0::TestAbax2InlineXBRLGenerator.IXbrlBasicTemplateTests.ProcessTemplate_WithSimpleFact_GeneratesCorrectIXBRL&lt;/TestId&gt;
+    &lt;TestId&gt;NUnit3x::14EDCF65-8C89-4C78-85A1-3810B623383D::net8.0::TestAbax2InlineXBRLGenerator.IXBRLVariablesTemplateTests.ProcessTemplate_WithVariablesAndIndentation_GeneratesStructuredFinancialStatement&lt;/TestId&gt;
+    &lt;TestId&gt;NUnit3x::14EDCF65-8C89-4C78-85A1-3810B623383D::net8.0::TestAbax2InlineXBRLGenerator.IXBRLVariablesTemplateTests.ProcessTemplate_WithPresentationLinkbase_GeneratesCorrectStructure&lt;/TestId&gt;
+    &lt;TestId&gt;NUnit3x::14EDCF65-8C89-4C78-85A1-3810B623383D::net8.0::TestAbax2InlineXBRLGenerator.Tests.ProcessTemplate_FromFile_GeneratesAndSavesIXBRLDocument&lt;/TestId&gt;
+    &lt;TestId&gt;NUnit3x::14EDCF65-8C89-4C78-85A1-3810B623383D::net8.0::TestAbax2InlineXBRLGenerator.GenerateTemplateIFRSTest.ProcessTemplate_FromFile_GeneratesAndSavesIXBRLDocument&lt;/TestId&gt;
+    &lt;TestId&gt;NUnit3x::14EDCF65-8C89-4C78-85A1-3810B623383D::net8.0::TestAbax2InlineXBRLGenerator.GenerateTemplateIFRSTest.ProcessTemplate_UsingIFRS2019ICSRenderer_GeneratesAndSavesIXBRLDocument&lt;/TestId&gt;
+  &lt;/TestAncestor&gt;
+&lt;/SessionState&gt;</s:String>
+	
+	</wpf:ResourceDictionary>

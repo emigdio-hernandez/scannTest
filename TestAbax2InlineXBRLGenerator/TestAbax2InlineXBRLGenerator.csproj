@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="NUnit" Version="3.14.0" />
+    <PackageReference Include="NUnit.Analyzers" Version="3.9.0" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <PackageReference Include="AbaxXBRL.CNBV.Persistence" Version="0.0.1" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.Commons" Version="0.0.12" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.AmaforeESG" Version="1.0.40" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.AnnexT" Version="1.0.10" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.AnnualReport" Version="1.0.11" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.IFRS" Version="1.0.15" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.RelevantEvents" Version="1.0.9" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.Trust" Version="1.0.11" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.IFRS2015" Version="0.0.1" />
+    <PackageReference Include="AbaxXBRL.Taxonomies.Mx.GenericFile" Version="0.0.1" />
+    
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Abax2InlineXBRLGenerator/Abax2InlineXBRLGenerator.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="NUnit.Framework" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Output/" />
+    <Folder Include="Output/css/" />
+    <Folder Include="Output/js/" />
+    <Folder Include="Output/images/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Templates\*.*">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Output\*.*">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Output\css\*.*">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Output\js\*.*">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Output\images\*.*">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="Templates\fibras_aa_2019_template.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>
